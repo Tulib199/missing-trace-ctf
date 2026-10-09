@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Missing Trace – Incident Response Game</title>
+<style>
+  :root {
+    --bg: #07111f; --panel: #0e1c33; --panel2: #142844; --line: #2a4a75;
+    --text: #e8f1ff; --muted: #8fb0d6; --accent: #4ec3ff; --green: #3ee6a0;
+    --amber: #ffc14d; --red: #ff5d6a; --gold: #ffd56a; --crate: #c9843a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    color: var(--text);
+    font-family: "Segoe UI", Aptos, system-ui, sans-serif;
+    font-size: 14px;
+    background:
+      radial-gradient(1200px 500px at 50% -10%, #16345d 0%, transparent 60%),
+      linear-gradient(#0a1628, var(--bg));
+  }
+  body::before {
+    content: ""; pointer-events: none; position: fixed; inset: 0; z-index: 0;
+    background-image:
+      linear-gradient(rgba(78,195,255,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(78,195,255,.05) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+  body::after {
+    content: ""; pointer-events: none; position: fixed; inset: 0; z-index: 80;
+    background: repeating-linear-gradient(transparent 0 3px, rgba(0,0,0,.08) 3px 4px);
+    opacity: .25;
+  }
+  button { font: inherit; cursor: pointer; }
+  .mono { font-family: Consolas, "Cascadia Mono", monospace; }
+  header, main, .overlay { position: relative; z-index: 1; }
+
+  header {
+    position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 12px;
+    padding: 10px 22px; background: rgba(6, 14, 28, .92); border-bottom: 1px solid var(--line);
+    backdrop-filter: blur(8px);
+  }
+  .logo {
+    width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center;
+    background: linear-gradient(145deg, #1b4e86, #0b2748); border: 1px solid var(--accent);
+    box-shadow: 0 0 16px rgba(78,195,255,.35); font-size: 22px;
+  }
+  .brand { display: flex; flex-direction: column; margin-right: auto; }
+  .brand b { font-size: 18px; letter-spacing: .6px; }
+  .brand span { color: var(--muted); font-size: 12px; }
+  .live { color: var(--red); font-weight: 800; letter-spacing: 1.4px; font-size: 11px; animation: blink 1.4s infinite; }
+  @keyframes blink { 50% { opacity: .35; } }
+  .stat { text-align: center; min-width: 78px; padding: 5px 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+  .stat small { display: block; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 1px; }
+  .stat div { font-size: 18px; font-weight: 700; }
+  #timer.over { color: var(--red); }
+  .iconbtn { background: none; border: 1px solid var(--line); color: var(--muted); border-radius: 8px; padding: 6px 10px; }
+  .iconbtn:hover { color: var(--text); border-color: var(--accent); }
+
+  main { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; padding: 16px 22px 48px; max-width: 1540px; margin: 0 auto; }
+  .panel { background: linear-gradient(180deg, rgba(20,40,68,.95), var(--panel)); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; box-shadow: 0 10px 30px rgba(0,0,0,.25); }
+  .panel h2 { margin: 0 0 10px; font-size: 15px; letter-spacing: .4px; display: flex; align-items: center; gap: 8px; }
+  .panel h2 .tag { margin-left: auto; font-size: 11px; color: var(--muted); font-weight: 400; }
+  .col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+  .facility { overflow-x: auto; padding: 8px 4px 18px; }
+  .pipe { display: flex; align-items: end; min-width: 0; gap: 0; justify-content: space-between; }
+  .site { background: none; border: 0; color: inherit; width: 126px; flex: 1 1 0; min-width: 108px; text-align: center; }
+  .site .art { height: 118px; position: relative; filter: drop-shadow(0 8px 10px rgba(0,0,0,.35)); transition: transform .2s; }
+  .site:hover .art, .site.selected .art { transform: translateY(-6px); }
+  .site .name { font-size: 12px; font-weight: 700; margin-top: 6px; }
+  .site .sub { font-size: 10px; color: var(--muted); }
+  .pill { display: inline-block; margin-top: 4px; font-size: 10px; font-weight: 800; letter-spacing: .5px; padding: 2px 8px; border-radius: 99px; background: #0a1a30; border: 1px solid var(--line); color: var(--muted); }
+  .site.healthy .pill { color: var(--green); border-color: var(--green); }
+  .site.suspect .pill { color: var(--amber); border-color: var(--amber); }
+  .site.root .pill { color: var(--red); border-color: var(--red); animation: pulse 1.4s infinite; }
+  .site.alert .pill { color: var(--red); border-color: var(--red); animation: pulse 1.4s infinite; }
+  .site.selected .name { color: var(--accent); }
+  .wire { width: 18px; height: 70px; position: relative; flex: 0 0 18px; }
+  .wire::before { content: ""; position: absolute; left: 0; right: 0; top: 48px; height: 3px; background: linear-gradient(90deg, #3a6aa8, #7ad0ff, #3a6aa8); border-radius: 99px; }
+  .pkt { position: absolute; top: 44px; width: 10px; height: 10px; border-radius: 50%; background: #fff; box-shadow: 0 0 10px var(--accent); animation: ride 1.8s linear infinite; }
+  .pkt.b { animation-delay: .9s; background: var(--gold); box-shadow: 0 0 10px var(--gold); }
+  @keyframes ride { from { left: -4px; opacity: 0; } 12% { opacity: 1; } to { left: 22px; opacity: 0; } }
+  @keyframes pulse { 50% { box-shadow: 0 0 12px currentColor; } }
+
+  .bldg { position: absolute; left: 50%; transform: translateX(-50%); }
+  .wh .floor { bottom: 8px; width: 118px; height: 28px; background: #6b4a28; border: 2px solid #3d2a16; }
+  .wh .wall { bottom: 34px; width: 108px; height: 52px; background: #c9a36a; border: 2px solid #8a6a3a; }
+  .wh .door { bottom: 10px; width: 22px; height: 30px; background: #4a3420; left: 62%; }
+  .wh .roof { bottom: 82px; width: 0; height: 0; border-left: 62px solid transparent; border-right: 62px solid transparent; border-bottom: 28px solid #8b3a32; left: 50%; transform: translateX(-50%); }
+  .wh .box { bottom: 12px; width: 18px; height: 14px; background: var(--crate); border: 1px solid #7a4d18; left: 22%; }
+  .fw .bars { bottom: 18px; display: flex; gap: 6px; width: 90px; justify-content: center; }
+  .fw .bar { width: 10px; height: 70px; background: linear-gradient(#c45454, #7a2020); border: 1px solid #4a1010; }
+  .rack .cab { bottom: 10px; width: 70px; height: 92px; background: #1a2434; border: 3px solid #4d6a90; border-radius: 6px; }
+  .rack .lights { position: absolute; inset: 12px 10px; display: grid; gap: 6px; }
+  .rack .lights i { height: 8px; background: linear-gradient(90deg, #3ee6a0, #4ec3ff); border-radius: 2px; display: block; animation: blink 2s infinite; }
+  .rack .lights i:nth-child(2) { animation-delay: .4s; background: linear-gradient(90deg, #ffc14d, #4ec3ff); }
+  .hub .core { bottom: 22px; width: 72px; height: 72px; background: conic-gradient(#1b4e86, #4ec3ff, #1b4e86); border-radius: 50%; border: 4px solid #8fd6ff; }
+  .hub .core::after { content: ""; position: absolute; inset: 16px; background: #0b2748; border-radius: 50%; }
+  .old .box { bottom: 12px; width: 86px; height: 70px; background: #bfa27a; border: 3px solid #7d6544; border-radius: 4px; }
+  .old .slot { position: absolute; left: 12px; right: 12px; height: 8px; background: #333; top: 22px; }
+  .old .led { position: absolute; width: 8px; height: 8px; border-radius: 50%; background: var(--amber); right: 12px; bottom: 12px; animation: blink 1s infinite; }
+  .cld .puff { bottom: 28px; width: 96px; height: 46px; background: #d7ecff; border-radius: 40px; }
+  .cld .puff::before, .cld .puff::after { content: ""; position: absolute; background: #d7ecff; border-radius: 50%; }
+  .cld .puff::before { width: 40px; height: 40px; left: 10px; top: -18px; }
+  .cld .puff::after { width: 52px; height: 52px; right: 8px; top: -24px; }
+  .mon .screen { bottom: 28px; width: 96px; height: 62px; background: #081018; border: 4px solid #4d6a90; border-radius: 6px; color: var(--red); font-weight: 800; font-size: 20px; display: grid; place-items: center; }
+  .mon .stand { bottom: 10px; width: 18px; height: 18px; background: #4d6a90; }
+  .mon .base { bottom: 6px; width: 50px; height: 6px; background: #4d6a90; border-radius: 4px; }
+  .chk { position: absolute; top: 2px; right: 18px; color: var(--green); font-size: 14px; }
+
+  .boards { display: flex; flex-wrap: wrap; gap: 8px; }
+  .boardbtn { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; }
+  .boardbtn:hover { border-color: var(--accent); }
+
+  .bay { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; }
+  .crate {
+    background: linear-gradient(#d59a4a, #a66b24); border: 2px solid #6d4414; border-radius: 8px;
+    padding: 8px 6px 6px; text-align: center; color: #2a1604; cursor: pointer; min-height: 86px;
+    box-shadow: inset 0 1px 0 #f0c07a, 0 4px 0 #6d4414;
+  }
+  .crate b { display: block; font-size: 12px; }
+  .crate small { display: block; font-size: 10px; opacity: .8; }
+  .crate .st { margin-top: 6px; font-size: 10px; font-weight: 800; letter-spacing: .4px; background: #2a1604; color: #f0c07a; border-radius: 99px; padding: 2px 6px; }
+  .crate.gone { filter: grayscale(.4) brightness(.7); outline: 2px dashed var(--red); }
+  .crate.ok { outline: 2px solid #1f7a4a; }
+  .crate.rej { outline: 2px solid var(--amber); }
+  .crate.test { background: linear-gradient(#5a7ea8, #2d4a6a); border-color: #1b334c; color: #e8f1ff; box-shadow: inset 0 1px 0 #8fb0d6, 0 4px 0 #1b334c; }
+  .crate.test .st { background: #0a1a30; color: #8fd6ff; }
+
+  #inspector .desc { color: var(--muted); margin: 0 0 10px; }
+  .diag { display: flex; gap: 6px; flex-wrap: wrap; }
+  .diag button { border-radius: 999px; padding: 5px 12px; border: 1px solid var(--line); background: var(--panel2); color: var(--text); font-size: 12px; }
+  .diag button.on.h { background: rgba(62,230,160,.18); border-color: var(--green); }
+  .diag button.on.s { background: rgba(255,193,77,.18); border-color: var(--amber); }
+  .diag button.on.r { background: rgba(255,93,106,.2); border-color: var(--red); }
+  .evlinks { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 12px; }
+  .chip { border: 1px solid var(--line); background: var(--panel2); color: var(--text); border-radius: 999px; padding: 4px 10px; font-size: 12px; }
+  .chip:hover { border-color: var(--accent); }
+
+  .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+  .tab { position: relative; border: 1px solid var(--line); background: var(--panel2); color: var(--muted); border-radius: 9px; padding: 6px 12px; font-weight: 600; }
+  .tab.active { color: #fff; background: #1d3a64; border-color: var(--accent); }
+  .tab.mine { box-shadow: 0 0 0 2px rgba(255,213,106,.55); }
+  .tab .seen { position: absolute; top: -6px; right: -6px; background: var(--green); color: #052; border-radius: 50%; width: 15px; height: 15px; font-size: 10px; line-height: 15px; text-align: center; }
+  #evTitle { margin: 0 0 4px; font-size: 16px; }
+  #evSub { color: var(--muted); margin: 0 0 10px; font-size: 12px; }
+  .log { background: #050b14; border: 1px solid #1c3a5c; border-radius: 10px; padding: 8px 0; overflow-x: auto; box-shadow: inset 0 0 30px rgba(78,195,255,.08); }
+  .log div { padding: 2px 12px; white-space: pre; font-size: 12px; cursor: pointer; border-left: 3px solid transparent; color: #9fe3a8; }
+  .log div:hover { background: rgba(78,195,255,.08); }
+  .log div.pinned, tr.pinned td { background: rgba(255,213,106,.14); border-left-color: var(--gold); }
+  table.ev { border-collapse: collapse; width: 100%; font-size: 12px; }
+  table.ev th { background: #1d3a64; text-align: left; padding: 6px 8px; font-weight: 600; position: sticky; top: 0; }
+  table.ev td { padding: 5px 8px; border-top: 1px solid var(--line); }
+  table.ev tr:hover td { background: rgba(78,195,255,.07); }
+  table.ev tbody tr { cursor: pointer; }
+  .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+  .note { color: var(--muted); font-size: 12px; margin-top: 8px; }
+  .textev p { line-height: 1.55; margin: 0 0 10px; }
+  .options { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; }
+  .opt { border: 1px solid var(--line); background: var(--panel2); border-radius: 12px; padding: 12px; text-align: left; color: var(--text); line-height: 1.45; }
+  .opt b { display: block; font-size: 15px; margin-bottom: 4px; color: var(--accent); }
+  .opt.chosen { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(255,213,106,.35); }
+  .hintline { color: var(--muted); font-size: 12px; margin-top: 8px; }
+
+  #recon td select { background: #0c1a30; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; font: inherit; font-size: 12px; }
+  .reconsum { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; align-items: center; }
+  .badge { padding: 4px 10px; border-radius: 999px; font-size: 12px; background: var(--panel2); border: 1px solid var(--line); }
+  .badge b { color: var(--gold); }
+  .badge[title], .class-legend span[title], select[title] { cursor: help; }
+  .class-legend { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+  .class-legend span { font-size: 11px; padding: 3px 8px; border-radius: 99px; background: var(--panel2); border: 1px dashed var(--line); color: var(--muted); }
+
+  .fb { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 10px; }
+  .fb label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; }
+  .fb select, .fb input, #manualFlag { background: #0c1a30; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px; font: inherit; font-size: 14px; }
+  .optpick { display: flex; gap: 6px; }
+  .optpick button { flex: 1; padding: 8px 0; border-radius: 8px; border: 1px solid var(--line); background: #0c1a30; color: var(--text); font-weight: 700; }
+  .optpick button.on { border-color: var(--gold); background: rgba(255,213,106,.15); }
+  #flagPreview { margin: 14px 0 10px; text-align: center; font-size: 22px; letter-spacing: 1px; padding: 14px; border-radius: 12px; background: #050b14; border: 1px dashed var(--accent); color: var(--gold); word-break: break-all; }
+  .submitrow { display: flex; gap: 10px; }
+  #manualFlag { flex: 1; font-family: Consolas, monospace; }
+  .primary { background: linear-gradient(135deg, #3b8cff, #2b5fd9); color: #fff; border: 0; border-radius: 10px; padding: 10px 22px; font-weight: 700; }
+  .primary:disabled { opacity: .45; cursor: not-allowed; }
+  #feedback { margin-top: 10px; min-height: 20px; font-weight: 600; }
+  #feedback.bad { color: var(--red); }
+  .shake { animation: shake .4s; }
+  @keyframes shake { 20%,60% { transform: translateX(-8px); } 40%,80% { transform: translateX(8px); } }
+
+  .roles { display: grid; gap: 6px; }
+  .role { text-align: left; border: 1px solid var(--line); background: var(--panel2); color: var(--text); border-radius: 10px; padding: 8px 10px; }
+  .role small { display: block; color: var(--muted); font-size: 11px; margin-top: 2px; }
+  .role.on { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(255,213,106,.3); }
+  #pins { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 260px; overflow-y: auto; }
+  #pins li { background: #050b14; border: 1px solid var(--line); border-left: 3px solid var(--gold); border-radius: 8px; padding: 6px 28px 6px 8px; font-size: 11.5px; position: relative; word-break: break-word; }
+  #pins li span { color: var(--muted); font-size: 10px; display: block; }
+  #pins li button { position: absolute; right: 4px; top: 4px; background: none; border: 0; color: var(--muted); }
+  #notes { width: 100%; min-height: 90px; margin-top: 8px; background: #050b14; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px; font: inherit; font-size: 12.5px; resize: vertical; }
+  .hint { border: 1px solid var(--line); border-radius: 10px; padding: 10px; background: var(--panel2); margin-bottom: 8px; }
+  .hint p { margin: 6px 0 0; line-height: 1.45; }
+  .hint button { background: none; border: 1px solid var(--amber); color: var(--amber); border-radius: 8px; padding: 5px 10px; }
+  .hint button:disabled { opacity: .4; cursor: not-allowed; }
+  .progress { height: 8px; border-radius: 99px; background: #050b14; overflow: hidden; border: 1px solid var(--line); }
+  .progress div { height: 100%; background: linear-gradient(90deg, var(--accent), var(--green)); width: 0; transition: width .4s; }
+
+  .overlay { position: fixed; inset: 0; z-index: 50; background: rgba(4,9,18,.86); display: flex; align-items: center; justify-content: center; padding: 20px; backdrop-filter: blur(5px); }
+  .overlay.hidden { display: none; }
+  .modal { width: min(860px, 100%); max-height: 92vh; overflow-y: auto; background: linear-gradient(180deg, #16325a, var(--panel)); border: 1px solid var(--line); border-radius: 18px; padding: 26px 30px; box-shadow: 0 20px 60px rgba(0,0,0,.55); }
+  .modal h1 { margin: 0 0 4px; font-size: 30px; }
+  .modal .lead { color: var(--muted); margin: 0 0 18px; }
+  .ticket { background: #050b14; border: 1px solid var(--line); border-left: 4px solid var(--red); border-radius: 10px; padding: 12px 16px; margin: 14px 0; }
+  .ticket .hdr { color: var(--red); font-weight: 700; font-size: 12px; letter-spacing: 1px; margin-bottom: 6px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 18px; }
+  .modal ul { margin: 6px 0 0; padding-left: 18px; line-height: 1.6; }
+  .modal input[type=text] { width: 100%; background: #050b14; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 10px; font: inherit; font-size: 15px; }
+  .solution h3 { color: var(--gold); margin: 18px 0 6px; font-size: 15px; }
+  .solution p { margin: 0; line-height: 1.55; }
+  .trophy { font-size: 64px; text-align: center; }
+  .scoreline { display: flex; justify-content: center; gap: 12px; margin: 10px 0 4px; flex-wrap: wrap; }
+  #confetti { position: fixed; inset: 0; pointer-events: none; z-index: 60; }
+  .hero { display: flex; gap: 18px; align-items: center; margin-bottom: 8px; }
+  .radar { width: 88px; height: 88px; border-radius: 50%; border: 3px solid var(--accent); position: relative; background: radial-gradient(circle, #0b2748, #050b14); flex: 0 0 88px; }
+  .radar::before { content: ""; position: absolute; inset: 10px; border: 1px dashed rgba(78,195,255,.4); border-radius: 50%; }
+  .radar i { position: absolute; left: 50%; top: 50%; width: 42px; height: 2px; background: linear-gradient(90deg, transparent, var(--accent)); transform-origin: 0 50%; animation: sweep 2.4s linear infinite; }
+  @keyframes sweep { to { transform: rotate(360deg); } }
+
+  @media (max-width: 1100px) { main { grid-template-columns: 1fr; } .fb { grid-template-columns: 1fr 1fr; } .options { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">📡</div>
+  <div class="brand">
+    <b>The Missing Trace</b>
+    <span><span class="live">● LIVE INCIDENT</span> · NorthBridge Health Supply · <span id="teamLabel">Team</span></span>
+  </div>
+  <div class="stat"><small>Time left</small><div id="timer" class="mono">45:00</div></div>
+  <div class="stat"><small>Score</small><div id="score">500</div></div>
+  <div class="stat"><small>Attempts</small><div id="attempts">10</div></div>
+  <div class="stat"><small>Evidence</small><div id="evCount">0/8</div></div>
+  <button class="iconbtn" id="briefBtn" title="Re-open the mission briefing">Briefing</button>
+  <button class="iconbtn" id="resetBtn" title="Facilitator reset">Reset</button>
+</header>
+
+<main>
+  <div class="col">
+    <section class="panel">
+      <h2>🏭 Facility Map <span class="tag">Follow the receipt from the warehouse floor to the ops screen. Click a station to inspect it.</span></h2>
+      <div class="facility"><div class="pipe" id="map" role="img" aria-label="System flow diagram"></div></div>
+      <div class="boards">
+        <button class="boardbtn" data-ev="D">🔌 Network Tests (D)</button>
+        <button class="boardbtn" data-ev="E">☁️ Vendor Status (E)</button>
+        <button class="boardbtn" data-ev="H">📅 Change Board (H)</button>
+        <button class="boardbtn" data-ev="F">🏗️ Design Board (F)</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>📦 Pallet Bay <span class="tag">What operations sees at 09:29. Click a crate to pin it.</span></h2>
+      <div class="bay" id="bay"></div>
+      <div class="note">Gold crates reached the dashboard. Faded crates are marked Missing. The ticket said 8 were missing — that is a symptom, not the answer.</div>
+    </section>
+
+    <section class="panel">
+      <h2>🗂️ Evidence Locker <span class="tag">Click any log line or table row to pin it to the team notebook</span></h2>
+      <div class="tabs" id="tabs"></div>
+      <h3 id="evTitle"></h3>
+      <p id="evSub"></p>
+      <div id="evBody"></div>
+    </section>
+
+    <section class="panel" id="recon">
+      <h2>🧮 Reconciliation Board <span class="tag">Classify every row from Evidence A · hover a label to see what it means</span></h2>
+      <div class="class-legend" id="classLegend"></div>
+      <div class="tablewrap">
+        <table class="ev"><thead><tr><th>Txn</th><th>Time</th><th>PO</th><th>Match ID</th><th>ERP</th><th>Hub</th><th>Dashboard</th><th>Your classification</th></tr></thead>
+        <tbody id="reconBody"></tbody></table>
+      </div>
+      <div class="reconsum" id="reconSum"></div>
+    </section>
+
+    <section class="panel">
+      <h2>🚩 Flag Builder <span class="tag">FLAG{COMPONENT_HHMM_COUNT_OPTION}</span></h2>
+      <div class="fb">
+        <label>Root-cause component<select id="fbComp"></select></label>
+        <label>Onset time (HH:MM)<input id="fbTime" class="mono" placeholder="HH:MM" maxlength="5"></label>
+        <label>Unique replay count<input id="fbCount" type="number" min="0" max="20" placeholder="#"></label>
+        <label>Architecture option<div class="optpick" id="fbOpt"></div></label>
+      </div>
+      <div id="flagPreview" class="mono">FLAG{…}</div>
+      <div class="submitrow">
+        <input id="manualFlag" placeholder="…or type the full flag here" spellcheck="false">
+        <button class="primary" id="submitBtn">Submit Flag</button>
+      </div>
+      <div id="feedback"></div>
+    </section>
+  </div>
+
+  <aside class="col">
+    <section class="panel" id="inspector">
+      <h2>🔎 Component Inspector</h2>
+      <div id="inspBody"><p class="desc">Select a station on the facility map.</p></div>
+    </section>
+    <section class="panel">
+      <h2>👥 My Role</h2>
+      <div class="roles" id="roles"></div>
+      <div class="hintline">Your evidence tabs are outlined in gold. Every role delivers one part of the flag.</div>
+    </section>
+    <section class="panel">
+      <h2>📌 Team Notebook <span class="tag" id="pinCount">0 pinned</span></h2>
+      <div class="progress" title="Evidence reviewed"><div id="progBar"></div></div>
+      <ul id="pins" style="margin-top:10px"></ul>
+      <textarea id="notes" placeholder="Working notes: theories, timeline, who is checking what…"></textarea>
+    </section>
+    <section class="panel">
+      <h2>💡 Hints</h2>
+      <div id="hints"></div>
+    </section>
+  </aside>
+</main>
+
+<div class="overlay" id="intro">
+  <div class="modal">
+    <div class="hero">
+      <div class="radar"><i></i></div>
+      <div>
+        <h1>The Missing Trace</h1>
+        <p class="lead">A Real-Time Data Integration and Process Optimization challenge · Team of 3–4 · 45 minutes</p>
+      </div>
+    </div>
+    <p>NorthBridge Health Supply distributes serialized medical products. Every pallet is scanned, posted to ERP, and passed in real time through an integration layer to a cloud traceability platform that regulators and hospitals rely on.</p>
+    <div class="ticket">
+      <div class="hdr">INC-20931 · PRIORITY HIGH · OPENED 09:30</div>
+      “The traceability dashboard is showing <b>8 receipts missing</b> since about 09:10. They are all in the ERP. My team has been resending and rescanning to try to push them through. Please fix this before the 11:00 hospital shipment cut-off.”
+      <div class="note">— Warehouse Operations Lead</div>
+    </div>
+    <div class="grid2">
+      <div><b>Your mission</b>
+        <ul><li>Which component is the <b>root cause</b>?</li><li>Exactly <b>when</b> did it start failing?</li><li>How many <b>unique</b> transactions need replay?</li><li>Which <b>design</b> prevents a repeat?</li></ul></div>
+      <div><b>Rules</b>
+        <ul><li>The component that <i>reports</i> an error may not be the one that <i>caused</i> it.</li><li>“Missing” on the dashboard ≠ failed integration message.</li><li>10 flag attempts. Wrong attempts cost 25 points.</li><li>Hints cost points. The clock keeps running.</li></ul></div>
+    </div>
+    <p style="margin-top:16px"><b>Team name</b></p>
+    <input type="text" id="teamName" placeholder="e.g. Team Packet Tracers" maxlength="40">
+    <div style="display:flex; justify-content:flex-end; margin-top:18px; gap:10px">
+      <button class="primary" id="startBtn">Start the incident ▶</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay hidden" id="win">
+  <div class="modal">
+    <div class="trophy">🏆</div>
+    <h1 style="text-align:center">Trace Restored!</h1>
+    <p class="lead" style="text-align:center" id="winTeam"></p>
+    <div class="scoreline">
+      <div class="stat"><small>Final score</small><div id="winScore"></div></div>
+      <div class="stat"><small>Time used</small><div id="winTime" class="mono"></div></div>
+      <div class="stat"><small>Attempts used</small><div id="winAttempts"></div></div>
+      <div class="stat"><small>Hints used</small><div id="winHints"></div></div>
+    </div>
+    <div class="solution" id="solution"></div>
+    <div style="display:flex; justify-content:flex-end; margin-top:20px"><button class="primary" id="closeWin">Back to the board</button></div>
+  </div>
+</div>
+
+<div class="overlay hidden" id="locked">
+  <div class="modal" style="text-align:center">
+    <div class="trophy">🔒</div>
+    <h1>Out of attempts</h1>
+    <p class="lead">Your team used all 10 flag attempts. Bring your answer sheet to the facilitator for review.</p>
+    <button class="primary" id="closeLocked">Review the evidence</button>
+  </div>
+</div>
+
+<canvas id="confetti"></canvas>
+
+<script>
+const VAULT = {"salt": "W1dB4gwqp4vD33Xhj4qDpg==", "iv": "CpkmxICwKcz7z4SB", "ct": "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", "iter": 250000};
+const STORE = "missingTrace.game.v2";
+const START_SCORE = 500, WRONG_COST = 25, MAX_ATTEMPTS = 10, DURATION = 45 * 60;
+
+const NODES = [
+  { id: "SCANNER", art: "wh", icon: "📟", name: "Warehouse Scanner", sub: "Wi-Fi VLAN 30", ev: ["G"], desc: "Handheld scanners on the warehouse wireless network. Scans pallets and sends receipts to ERP over HTTPS." },
+  { id: "FIREWALL", art: "fw", icon: "🧱", name: "Firewall", sub: "Network edge", ev: ["H", "D"], desc: "Controls traffic between the warehouse network, data center, and internet. Check the change calendar and connectivity tests." },
+  { id: "ERP", art: "rack", icon: "🗄️", name: "ERP Receiving", sub: "Creates a Match ID", ev: ["A"], desc: "Checks and posts receipts, then creates a Match ID from the purchase order and the serial numbers on the pallet. Rejected receipts are never sent onward." },
+  { id: "HUB", art: "hub", icon: "🔀", name: "Integration Hub", sub: "Holds and retries messages", ev: ["B", "D"], desc: "The middle system that holds messages, tries again if sending fails, and parks them when three tries have failed." },
+  { id: "LEGACYPROXY", art: "old", icon: "🧩", name: "Legacy App Proxy", sub: "Old middle box :8443", ev: ["C", "D", "H"], desc: "An older middle box that forwards hub traffic to the cloud. It keeps its own list of trusted certificates." },
+  { id: "TRACECLOUD", art: "cld", icon: "☁️", name: "Traceability Cloud", sub: "Vendor API :443", ev: ["E", "D"], desc: "Vendor-hosted traceability platform. Returns an ACK for each accepted receipt." },
+  { id: "DASHBOARD", art: "mon", icon: "📊", name: "Ops Dashboard", sub: "8 receipts missing", ev: ["A"], desc: "Reads TraceCloud data. Operations uses it to confirm product is available to ship.", alert: true },
+];
+
+const ART = {
+  wh: '<div class="art wh"><div class="bldg roof"></div><div class="bldg wall"></div><div class="bldg door"></div><div class="bldg box"></div><div class="bldg floor"></div></div>',
+  fw: '<div class="art fw"><div class="bldg bars"><i class="bar"></i><i class="bar"></i><i class="bar"></i><i class="bar"></i><i class="bar"></i></div></div>',
+  rack: '<div class="art rack"><div class="bldg cab"><div class="lights"><i></i><i></i><i></i><i></i><i></i></div></div></div>',
+  hub: '<div class="art hub"><div class="bldg core"></div></div>',
+  old: '<div class="art old"><div class="bldg box"><div class="slot"></div><div class="led"></div></div></div>',
+  cld: '<div class="art cld"><div class="bldg puff"></div></div>',
+  mon: '<div class="art mon"><div class="bldg screen">8</div><div class="bldg stand"></div><div class="bldg base"></div></div>',
+};
+
+const ROLES = [
+  { id: 1, name: "Data Reconciliation Analyst", ev: ["A", "G"], out: "Unique vs duplicate vs never-sent receipts → replay count" },
+  { id: 2, name: "Log Analyst", ev: ["B", "C", "H"], out: "When the root cause began and what changed → onset time" },
+  { id: 3, name: "Infrastructure Analyst", ev: ["D", "E"], out: "Which path and component is broken → root cause" },
+  { id: 4, name: "Solutions Architect", ev: ["F"], out: "Design that prevents recurrence safely → option letter" },
+];
+
+const EVIDENCE = {
+  A: { title: "Transaction Timeline", sub: "ERP + Dashboard export, 09:29", type: "table",
+       headers: ["Txn ID", "ERP Time", "ERP Status", "PO", "Match ID", "Hub Status", "Cloud Ack", "Dashboard"],
+       rows: [
+        ["T1001","09:02:14","Posted","PO-5510","RX-88410","Forwarded","ACK-200","Visible"],
+        ["T1002","09:05:29","Posted","PO-5511","RX-88411","Forwarded","ACK-200","Visible"],
+        ["T1003","09:06:11","Posted","PO-5512","RX-88412","Parked","None","Missing"],
+        ["T1004","09:08:08","Posted","PO-5513","RX-88415","Parked","None","Missing"],
+        ["T1005","09:10:03","Rejected (VAL-112)","PO-5514","—","Not received","None","Missing"],
+        ["T1006","09:11:30","Posted","PO-5515","RX-88419","Parked","None","Missing"],
+        ["T1007","09:14:17","Posted","PO-5516","RX-88421","Parked","None","Missing"],
+        ["T1008","09:18:04","Posted","PO-5515","RX-88419","Parked","None","Missing"],
+        ["T1009","09:21:39","Posted","PO-5517","RX-88426","Parked","None","Missing"],
+        ["T1010","09:23:01","Posted","PO-5512","RX-88412","Parked","None","Missing"],
+        ["TEST-DIRECT","09:25:10","N/A","—","—","Health test","HTTP 200","N/A"]],
+       note: "VAL-112 = the ERP rejected the receipt because the lot number was blank. Rejected receipts are never sent to the hub. Parked means the hub tried three times, failed, and is holding the message. The Match ID comes from the purchase order plus the serial numbers on the pallet. The same Match ID means the same physical pallet, even if the transaction IDs are different." },
+  B: { title: "Integration Hub Log", sub: "hub-prod-01 /var/log/hub/messages.log", type: "log", lines: [
+        "08:00:00  CONFIG  retry_max=3  retry_interval=30s  dedupe_check=OFF  parked_queue_alert=OFF",
+        "09:02:15  MSG T1001  key=RX-88410  route=legacy-proxy:8443  attempt=1  result=HTTP_200  ack=ACK-200",
+        "09:05:30  MSG T1002  key=RX-88411  route=legacy-proxy:8443  attempt=1  result=HTTP_200  ack=ACK-200",
+        "09:06:12  MSG T1003  key=RX-88412  route=legacy-proxy:8443  attempt=1  result=HTTP_504_GATEWAY_TIMEOUT",
+        "09:06:42  MSG T1003  key=RX-88412  route=legacy-proxy:8443  attempt=2  result=HTTP_504_GATEWAY_TIMEOUT",
+        "09:07:12  MSG T1003  key=RX-88412  route=legacy-proxy:8443  attempt=3  result=RETRY_EXHAUSTED  status=PARKED",
+        "09:08:09  MSG T1004  key=RX-88415  route=legacy-proxy:8443  attempts=3  result=RETRY_EXHAUSTED  status=PARKED",
+        "09:11:31  MSG T1006  key=RX-88419  route=legacy-proxy:8443  attempts=3  result=RETRY_EXHAUSTED  status=PARKED",
+        "09:14:18  MSG T1007  key=RX-88421  route=legacy-proxy:8443  attempts=3  result=RETRY_EXHAUSTED  status=PARKED",
+        "09:18:05  MSG T1008  key=RX-88419  source=MANUAL_RESEND  attempts=3  result=RETRY_EXHAUSTED  status=PARKED",
+        "09:21:40  MSG T1009  key=RX-88426  route=legacy-proxy:8443  attempts=3  result=RETRY_EXHAUSTED  status=PARKED",
+        "09:23:02  MSG T1010  key=RX-88412  source=ERP_RECEIPT  attempts=3  result=RETRY_EXHAUSTED  status=PARKED",
+        "09:25:10  TEST-DIRECT  route=tracecloud-api:443 (temporary rule FW-TMP-77)  result=HTTP_200  health=OK"] },
+  C: { title: "Legacy App Proxy Log", sub: "lap-relay-02 /opt/lap/logs/relay.log", type: "log", lines: [
+        "08:52:10  CHG-4471  OS security patch applied; relay configuration reloaded",
+        "08:52:11  truststore=/opt/lap/certs rebuilt from baseline image  entries=112",
+        "08:55:47  graceful restart completed; existing upstream pool connections retained  max_age=600s",
+        "09:02:15  relay T1001  upstream=tracecloud-api:443  pooled_conn=7  status=200",
+        "09:05:30  relay T1002  upstream=tracecloud-api:443  pooled_conn=3  status=200",
+        "09:05:47  pool=tracecloud  all pooled connections reached max_age; opening new upstream connections",
+        "09:05:47  upstream TLS handshake failed: unable to get local issuer certificate (TraceCloud Issuing CA G2)",
+        "09:05:47  connector_pool=tracecloud  status=UNAVAILABLE",
+        "09:06:12  inbound session accepted from integration-hub",
+        "09:06:42  upstream connection not established before timeout (30s); returned 504 to client",
+        "09:08:09  upstream connection not established before timeout (30s); returned 504 to client",
+        "09:11:31  upstream connection not established before timeout (30s); returned 504 to client",
+        "   ...    (same pattern repeats for every relay request through 09:23:02)"] },
+  D: { title: "Connectivity Tests", sub: "Network Team, 09:25–09:28", type: "table",
+       headers: ["Source", "Destination", "Test", "Result"], rows: [
+        ["Warehouse scanner (VLAN 30)","ERP Receiving :443","HTTPS","Success"],
+        ["ERP server","Integration Hub :443","TCP","Success"],
+        ["Integration Hub","Legacy App Proxy :8443","TCP","Success (4 ms)"],
+        ["Integration Hub","Legacy App Proxy :8443","POST /relay/tracecloud","HTTP 504 after 30 s"],
+        ["Legacy App Proxy","TraceCloud API :443","TCP","Success (22 ms)"],
+        ["Legacy App Proxy","TraceCloud API :443","TLS handshake","Failed – certificate verify failed (unknown issuer)"],
+        ["Integration Hub","TraceCloud API :443","HTTPS health check via FW-TMP-77","HTTP 200 – certificate chain valid (Issuing CA G2)"],
+        ["User workstation","Operations Dashboard","HTTPS","Success"]] },
+  E: { title: "External Platform Status", sub: "TraceCloud status page, 09:27", type: "text", paras: [
+        "🟢 All systems operational. No active incident. API health endpoint responding normally. No maintenance window in progress. Inbound processing normal for all regions during the last 24 hours.",
+        "📣 Notice (posted Sep 28): TraceCloud replaced its security certificate with a newer one called “TraceCloud Issuing CA G2.” Any customer that keeps its own list of trusted certificates must add the new G2 certificate. Everyday browsers and public lists already include it."] },
+  F: { title: "Architecture Options", sub: "Design review board – click an option to select it in the Flag Builder", type: "options", options: [
+        ["A", "Keep sending data through the old proxy. Give the hub more time (30 seconds to 2 minutes) and more retries (3 to 10) so short delays can clear on their own."],
+        ["B", "Connect the ERP straight to the cloud and shut down both the hub and the old proxy, so there are fewer systems that can break."],
+        ["C", "Keep the hub so IT can still hold and retry messages. Stop using the old proxy and send data from the hub straight to the cloud on an approved secure connection. Ignore repeat sendings of the same pallet so resends do not create duplicate records, and alert the team when messages sit unsent for too long."],
+        ["D", "Keep the hub and stop using the old proxy; send data from the hub straight to the cloud. Add a job that automatically resends every stuck message every 15 minutes."]] },
+  G: { title: "Warehouse Scanner & Operations Log", sub: "WMS activity feed", type: "log", lines: [
+        "09:06:05  WH-SCN-02  user=wh.recv1  PO-5512  pallet scanned  serials=48  lot=L24-0912",
+        "09:10:01  WH-SCN-04  user=wh.recv3  PO-5514  pallet scanned  serials=36  lot=<blank>  label damaged",
+        "09:11:24  WH-SCN-02  user=wh.recv1  PO-5515  pallet scanned  serials=60  lot=L24-0915",
+        "09:17:40  OPS-DESK   user=wh.ops2   \"PO-5515 not on dashboard - used ERP Resend button\"",
+        "09:20:55  WH-SCN-04  user=wh.recv3  PO-5512  pallet RESCANNED  serials=48  lot=L24-0912",
+        "                     note=\"not visible on dashboard, scanning again\"",
+        "09:24:30  OPS-DESK   user=wh.ops2   \"Told team to stop rescanning until IT responds\""] },
+  H: { title: "Change Calendar", sub: "Today's changes", type: "table",
+       headers: ["Change", "Window", "System", "Description", "Status"], rows: [
+        ["CHG-4460","08:30–08:40","Firewall","Rule update on warehouse wireless VLAN 30 (scanner network)","Completed"],
+        ["CHG-4471","08:50–09:00","Legacy App Proxy","Monthly OS security patch and config reload. Risk: Low. “No user impact expected.”","Completed"],
+        ["CHG-4475","22:00–23:00","ERP","Monthly database index maintenance","Scheduled"],
+        ["INC-20410","Sep 28","Legacy App Proxy","Manually imported TraceCloud Issuing CA G2 into proxy truststore after vendor rotation","Closed"]] },
+};
+
+const HINTS = [
+  { cost: 50, unlock: 15, text: "Line up the Match ID column. Two different transaction IDs can describe the same physical pallet. Also check whether every missing receipt actually reached the hub." },
+  { cost: 100, unlock: 30, text: "The hub records when it noticed the failure, not when the failure began. Find the earliest line where the failing component reports its own problem, and ask why it happened then rather than right after the restart." },
+];
+
+const CLASSES = ["— classify —", "Delivered OK", "Replay", "Duplicate (do not replay)", "Fix at source", "Not a business txn"];
+const CLASS_HELP = [
+  "Choose a category for this row.",
+  "This receipt already reached the cloud and shows as Visible. Do not send it again.",
+  "This is a real, unique pallet that failed in transit. It should be sent again once.",
+  "This is the same physical pallet as another row (same Match ID), from a resend or rescan. Sending it again would create a duplicate record.",
+  "This receipt never reached the hub. The warehouse or ERP data is wrong, so replaying it will not help. Fix the original record first.",
+  "This is a test or health check, not a real pallet. Do not count it as a business transaction.",
+];
+
+const defaults = () => ({ started: false, team: "", startAt: null, solvedAt: null, attempts: 0, tried: [], hints: [],
+  seen: [], pins: [], notes: "", diag: {}, role: null, recon: {}, comp: "", time: "", count: "", opt: "", solution: null });
+let S = Object.assign(defaults(), JSON.parse(localStorage.getItem(STORE) || "{}"));
+const save = () => localStorage.setItem(STORE, JSON.stringify(S));
+const $ = (id) => document.getElementById(id);
+function el(tag, attrs = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v == null) continue;
+    if (k === "class") e.className = v; else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+    else if (k === "html") e.innerHTML = v; else e.setAttribute(k, v);
+  }
+  for (const kid of kids.flat()) if (kid != null) e.append(kid.nodeType ? kid : document.createTextNode(kid));
+  return e;
+}
+
+let selectedNode = null, currentEv = "A";
+
+function score() {
+  const hintCost = S.hints.reduce((t, i) => t + HINTS[i].cost, 0);
+  const wrong = S.solvedAt ? S.attempts - 1 : S.attempts;
+  return Math.max(0, START_SCORE - hintCost - wrong * WRONG_COST);
+}
+function elapsed() { return S.startAt ? Math.floor(((S.solvedAt || Date.now()) - S.startAt) / 1000) : 0; }
+const fmt = (s) => { const a = Math.abs(s); return (s < 0 ? "-" : "") + String(Math.floor(a / 60)).padStart(2, "0") + ":" + String(a % 60).padStart(2, "0"); };
+
+function drawMap() {
+  const m = $("map"); m.innerHTML = "";
+  NODES.forEach((n, i) => {
+    const d = S.diag[n.id];
+    const cls = "site" + (d ? " " + d : "") + (selectedNode === n.id ? " selected" : "") + (n.alert && !d ? " alert" : "");
+    const pill = { healthy: "HEALTHY", suspect: "SUSPECT", root: "ROOT CAUSE" }[d] || (n.alert ? "ALERT" : "UNCHECKED");
+    const btn = el("button", { class: cls, onclick: () => selectNode(n.id) });
+    btn.innerHTML = ART[n.art] + (n.ev.every((e) => S.seen.includes(e)) ? '<span class="chk">✔</span>' : "");
+    btn.append(el("div", { class: "name" }, n.name), el("div", { class: "sub" }, n.sub), el("div", { class: "pill" }, pill));
+    m.append(btn);
+    if (i < NODES.length - 1) m.append(el("div", { class: "wire" }, el("span", { class: "pkt" }), el("span", { class: "pkt b" })));
+  });
+}
+
+function selectNode(id) {
+  selectedNode = id; const n = NODES.find((x) => x.id === id);
+  const body = $("inspBody"); body.innerHTML = "";
+  body.append(el("div", { style: "font-size:28px" }, n.icon), el("h3", { style: "margin:4px 0 6px" }, n.name, " ", el("span", { class: "mono", style: "font-size:11px;color:var(--muted)" }, n.id)),
+    el("p", { class: "desc" }, n.desc), el("b", {}, "Related evidence"),
+    el("div", { class: "evlinks" }, n.ev.map((e) => el("button", { class: "chip", onclick: () => showEv(e) }, `${e} · ${EVIDENCE[e].title}`))),
+    el("b", {}, "Your team's diagnosis"));
+  const diag = el("div", { class: "diag", style: "margin-top:6px" });
+  [["healthy", "h", "✅ Healthy"], ["suspect", "s", "⚠️ Suspect"], ["root", "r", "🔥 Root cause"]].forEach(([v, c, label]) => {
+    diag.append(el("button", { class: c + (S.diag[id] === v ? " on" : ""), onclick: () => setDiag(id, v) }, label));
+  });
+  body.append(diag);
+  if (n.ev[0]) showEv(n.ev[0], false);
+  drawMap();
+}
+
+function setDiag(id, v) {
+  if (S.diag[id] === v) delete S.diag[id];
+  else {
+    if (v === "root") for (const k in S.diag) if (S.diag[k] === "root") delete S.diag[k];
+    S.diag[id] = v;
+  }
+  const root = Object.keys(S.diag).find((k) => S.diag[k] === "root");
+  if (root) S.comp = root;
+  save(); selectNode(id); renderBuilder();
+}
+
+function renderBay() {
+  const bay = $("bay"); bay.innerHTML = "";
+  EVIDENCE.A.rows.forEach((r, i) => {
+    const dash = r[7], test = r[0] === "TEST-DIRECT", ok = dash === "Visible", miss = dash === "Missing";
+    const crate = el("button", { class: "crate" + (ok ? " ok" : miss ? " gone" : "") + (test ? " test" : "") + (r[2].startsWith("Rejected") ? " rej" : ""),
+      onclick: () => { togglePin("A", i, r.join(" | ")); renderBay(); } });
+    crate.append(el("b", {}, r[0]), el("small", {}, r[3]), el("small", { class: "mono" }, r[4]), el("div", { class: "st" }, test ? "HEALTH CHECK" : dash.toUpperCase()));
+    bay.append(crate);
+  });
+}
+
+function renderTabs() {
+  const tabs = $("tabs"); tabs.innerHTML = "";
+  const mine = S.role ? ROLES.find((r) => r.id === S.role).ev : [];
+  Object.keys(EVIDENCE).forEach((k) => {
+    const b = el("button", { class: "tab" + (k === currentEv ? " active" : "") + (mine.includes(k) ? " mine" : ""), onclick: () => showEv(k) }, `${k} · ${EVIDENCE[k].title}`);
+    if (S.seen.includes(k)) b.append(el("span", { class: "seen" }, "✓"));
+    tabs.append(b);
+  });
+  const n = S.seen.length;
+  $("evCount").textContent = `${n}/8`; $("progBar").style.width = (n / 8 * 100) + "%";
+}
+
+function pinKey(ev, i) { return ev + ":" + i; }
+function togglePin(ev, i, text) {
+  const k = pinKey(ev, i), idx = S.pins.findIndex((p) => p.k === k);
+  if (idx >= 0) S.pins.splice(idx, 1); else S.pins.push({ k, ev, text });
+  save(); showEv(ev, false); renderPins();
+}
+
+function showEv(k, scroll = true) {
+  currentEv = k; const E = EVIDENCE[k];
+  if (!S.seen.includes(k)) { S.seen.push(k); save(); }
+  $("evTitle").textContent = `Evidence ${k} – ${E.title}`; $("evSub").textContent = E.sub;
+  const body = $("evBody"); body.innerHTML = "";
+  const pinned = (i) => S.pins.some((p) => p.k === pinKey(k, i));
+  if (E.type === "log") {
+    const box = el("div", { class: "log mono" });
+    E.lines.forEach((line, i) => box.append(el("div", { class: pinned(i) ? "pinned" : "", title: "Click to pin", onclick: () => togglePin(k, i, line) }, line)));
+    body.append(box);
+  } else if (E.type === "table") {
+    const tb = el("tbody");
+    E.rows.forEach((r, i) => tb.append(el("tr", { class: pinned(i) ? "pinned" : "", title: "Click to pin", onclick: () => togglePin(k, i, r.join(" | ")) }, r.map((c) => el("td", {}, c)))));
+    body.append(el("div", { class: "tablewrap" }, el("table", { class: "ev" }, el("thead", {}, el("tr", {}, E.headers.map((h) => el("th", {}, h)))), tb)));
+    if (E.note) body.append(el("div", { class: "note" }, E.note));
+  } else if (E.type === "text") {
+    body.append(el("div", { class: "textev" }, E.paras.map((p, i) => el("p", { title: "Click to pin", style: "cursor:pointer", onclick: () => togglePin(k, i, p) }, p))));
+  } else if (E.type === "options") {
+    body.append(el("div", { class: "options" }, E.options.map(([l, t]) => el("button", { class: "opt" + (S.opt === l ? " chosen" : ""), onclick: () => { S.opt = l; save(); showEv("F", false); renderBuilder(); } }, el("b", {}, "Option " + l), t))));
+  }
+  renderTabs(); drawMap();
+  if (scroll) $("evTitle").scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function renderPins() {
+  const ul = $("pins"); ul.innerHTML = "";
+  S.pins.forEach((p, i) => ul.append(el("li", {}, el("span", {}, `Evidence ${p.ev}`), p.text, el("button", { title: "Unpin", onclick: () => { S.pins.splice(i, 1); save(); renderPins(); showEv(currentEv, false); renderBay(); } }, "✕"))));
+  if (!S.pins.length) ul.append(el("li", { style: "border-left-color:var(--line);color:var(--muted)" }, "Nothing pinned yet. Click crates, log lines, or table rows to collect proof."));
+  $("pinCount").textContent = `${S.pins.length} pinned`;
+}
+
+function renderRoles() {
+  const box = $("roles"); box.innerHTML = "";
+  ROLES.forEach((r) => box.append(el("button", { class: "role" + (S.role === r.id ? " on" : ""), onclick: () => { S.role = S.role === r.id ? null : r.id; save(); renderRoles(); renderTabs(); } },
+    `${r.id}. ${r.name}`, el("small", {}, `Evidence ${r.ev.join(", ")} → ${r.out}`))));
+}
+
+function classSelect(id) {
+  const cur = S.recon[id] || 0;
+  const sel = el("select", { title: CLASS_HELP[cur], onchange: (e) => { S.recon[id] = +e.target.value; save(); renderRecon(); } });
+  CLASSES.forEach((c, i) => {
+    const o = el("option", { value: i, title: CLASS_HELP[i] }, c);
+    if (cur === i) o.selected = true;
+    sel.append(o);
+  });
+  return sel;
+}
+function renderRecon() {
+  const legend = $("classLegend");
+  if (legend && !legend.childElementCount) {
+    CLASSES.slice(1).forEach((c, i) => legend.append(el("span", { title: CLASS_HELP[i + 1] }, c)));
+  }
+  const tb = $("reconBody"); tb.innerHTML = "";
+  EVIDENCE.A.rows.forEach((r) => {
+    tb.append(el("tr", {},
+      el("td", { class: "mono" }, r[0]),
+      el("td", { class: "mono" }, r[1]),
+      el("td", {}, r[3]),
+      el("td", { class: "mono" }, r[4]),
+      el("td", {}, r[2]),
+      el("td", {}, r[5]),
+      el("td", {}, r[7]),
+      el("td", {}, classSelect(r[0]))));
+  });
+  renderReconSum();
+}
+function renderReconSum() {
+  const counts = CLASSES.map(() => 0);
+  EVIDENCE.A.rows.forEach((r) => counts[S.recon[r[0]] || 0]++);
+  const sum = $("reconSum"); sum.innerHTML = "";
+  CLASSES.slice(1).forEach((c, i) => sum.append(el("span", { class: "badge", title: CLASS_HELP[i + 1] }, `${c}: `, el("b", {}, counts[i + 1]))));
+  sum.append(el("span", { class: "badge", title: CLASS_HELP[0] }, "Unclassified: ", el("b", {}, counts[0])));
+  sum.append(el("button", { class: "chip", style: "margin-left:auto", onclick: () => { S.count = String(counts[2]); save(); renderBuilder(); } }, `Use Replay count (${counts[2]}) in flag →`));
+}
+
+function renderBuilder() {
+  const comp = $("fbComp");
+  if (!comp.options.length) {
+    comp.append(el("option", { value: "" }, "— select —"));
+    NODES.forEach((n) => comp.append(el("option", { value: n.id }, `${n.id} (${n.name})`)));
+  }
+  comp.value = S.comp; $("fbTime").value = S.time; $("fbCount").value = S.count;
+  const op = $("fbOpt"); op.innerHTML = "";
+  ["A", "B", "C", "D"].forEach((l) => op.append(el("button", { class: S.opt === l ? "on" : "", onclick: () => { S.opt = l; save(); renderBuilder(); if (currentEv === "F") showEv("F", false); } }, l)));
+  $("flagPreview").textContent = builtFlag() || "FLAG{…}";
+}
+function builtFlag() {
+  const t = (S.time || "").replace(":", "");
+  if (!S.comp || !/^\d{4}$/.test(t) || S.count === "" || !S.opt) return "";
+  return `FLAG{${S.comp}_${t}_${S.count}_${S.opt}}`;
+}
+
+const b64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+async function openVault(flag) {
+  const enc = new TextEncoder();
+  const base = await crypto.subtle.importKey("raw", enc.encode(flag), "PBKDF2", false, ["deriveKey"]);
+  const key = await crypto.subtle.deriveKey({ name: "PBKDF2", salt: b64(VAULT.salt), iterations: VAULT.iter, hash: "SHA-256" }, base, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
+  try { return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64(VAULT.iv) }, key, b64(VAULT.ct)))); }
+  catch { return null; }
+}
+
+async function submit() {
+  const fb = $("feedback");
+  if (S.solvedAt) return showWin();
+  if (S.attempts >= MAX_ATTEMPTS) return $("locked").classList.remove("hidden");
+  const flag = ($("manualFlag").value.trim() || builtFlag());
+  if (!flag) { fb.className = "bad"; fb.textContent = "Complete all four parts of the Flag Builder or type a flag."; return; }
+  if (!/^FLAG\{[A-Z]+_\d{4}_\d+_[A-D]\}$/.test(flag)) { fb.className = "bad"; fb.textContent = "That does not match the flag format FLAG{COMPONENT_HHMM_COUNT_OPTION} (uppercase, no spaces). No attempt used."; return; }
+  if (S.tried.includes(flag)) { fb.className = "bad"; fb.textContent = "Your team already tried that exact flag. No attempt used."; return; }
+  $("submitBtn").disabled = true; fb.className = ""; fb.textContent = "Verifying…";
+  const sol = await openVault(flag);
+  $("submitBtn").disabled = false;
+  S.attempts++; S.tried.push(flag);
+  if (sol) { S.solvedAt = Date.now(); S.solution = { flag, sol }; save(); updateStats(); fb.textContent = "✅ Correct!"; confetti(); showWin(); return; }
+  save(); updateStats();
+  const left = MAX_ATTEMPTS - S.attempts;
+  fb.className = "bad"; fb.textContent = `❌ Incorrect. ${left} attempt${left === 1 ? "" : "s"} left (−${WRONG_COST} points). Re-check every part against the evidence.`;
+  const p = $("flagPreview"); p.classList.remove("shake"); void p.offsetWidth; p.classList.add("shake");
+  if (left <= 0) $("locked").classList.remove("hidden");
+}
+
+function showWin() {
+  const { sol } = S.solution;
+  $("winTeam").textContent = `${S.team || "Your team"} recovered the missing receipts · ${S.solution.flag}`;
+  $("winScore").textContent = score(); $("winTime").textContent = fmt(elapsed());
+  $("winAttempts").textContent = S.attempts; $("winHints").textContent = S.hints.length;
+  const box = $("solution"); box.innerHTML = "";
+  box.append(el("h3", { style: "color:var(--text);font-size:17px" }, sol.title));
+  sol.sections.forEach((s) => box.append(el("h3", {}, s.h), el("p", {}, s.p)));
+  $("win").classList.remove("hidden");
+}
+
+function renderHints() {
+  const box = $("hints"); box.innerHTML = "";
+  const mins = elapsed() / 60;
+  HINTS.forEach((h, i) => {
+    const open = S.hints.includes(i), ready = mins >= h.unlock;
+    const d = el("div", { class: "hint" }, el("b", {}, `Hint ${i + 1}`), " ", el("span", { style: "color:var(--muted);font-size:12px" }, `(−${h.cost} pts)`));
+    if (open) d.append(el("p", {}, h.text));
+    else d.append(el("div", { style: "margin-top:6px" }, el("button", { disabled: ready && !S.solvedAt ? null : "disabled", onclick: () => { if (confirm(`Unlock Hint ${i + 1} for ${h.cost} points?`)) { S.hints.push(i); save(); renderHints(); updateStats(); } } },
+      ready ? "Unlock hint" : `Available after ${h.unlock} min`)));
+    if (!ready || S.solvedAt) d.querySelector("button")?.setAttribute("disabled", "disabled");
+    box.append(d);
+  });
+}
+
+let hintTick = -1;
+function updateStats() {
+  const left = DURATION - elapsed(), t = $("timer");
+  t.textContent = fmt(left); t.classList.toggle("over", left < 0);
+  $("score").textContent = score(); $("attempts").textContent = Math.max(0, MAX_ATTEMPTS - S.attempts);
+  $("teamLabel").textContent = S.team || "Team";
+  const m = Math.floor(elapsed() / 60); if (m !== hintTick) { hintTick = m; renderHints(); }
+}
+
+function confetti() {
+  const c = $("confetti"), x = c.getContext("2d"); c.width = innerWidth; c.height = innerHeight;
+  const colors = ["#4ec3ff", "#3ee6a0", "#ffd56a", "#ff5d6a", "#c29bff"];
+  const P = Array.from({ length: 180 }, () => ({ x: Math.random() * c.width, y: -20 - Math.random() * c.height * .5, r: 4 + Math.random() * 5, vy: 2 + Math.random() * 3.5, vx: -1.5 + Math.random() * 3, a: Math.random() * 6, col: colors[Math.floor(Math.random() * colors.length)] }));
+  let f = 0;
+  (function tick() {
+    x.clearRect(0, 0, c.width, c.height);
+    P.forEach((p) => { p.y += p.vy; p.x += p.vx; p.a += .1; x.fillStyle = p.col; x.save(); x.translate(p.x, p.y); x.rotate(p.a); x.fillRect(-p.r, -p.r / 2, p.r * 2, p.r); x.restore(); });
+    if (++f < 260) requestAnimationFrame(tick); else x.clearRect(0, 0, c.width, c.height);
+  })();
+}
+
+$("startBtn").onclick = () => {
+  S.team = $("teamName").value.trim() || S.team || "Team";
+  if (!S.started) { S.started = true; S.startAt = Date.now(); }
+  save(); $("intro").classList.add("hidden"); updateStats();
+};
+$("briefBtn").onclick = () => { $("teamName").value = S.team; $("startBtn").textContent = S.started ? "Back to the incident ▶" : "Start the incident ▶"; $("intro").classList.remove("hidden"); };
+$("resetBtn").onclick = () => { if (confirm("Facilitator reset: erase this team's progress, attempts, and score?")) { localStorage.removeItem(STORE); location.reload(); } };
+$("closeWin").onclick = () => $("win").classList.add("hidden");
+$("closeLocked").onclick = () => $("locked").classList.add("hidden");
+$("submitBtn").onclick = submit;
+$("manualFlag").addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
+$("fbComp").onchange = (e) => { S.comp = e.target.value; save(); renderBuilder(); };
+$("fbTime").oninput = (e) => { let v = e.target.value.replace(/[^\d:]/g, ""); if (/^\d{3,4}$/.test(v)) v = v.slice(0, 2) + ":" + v.slice(2); S.time = v; save(); $("flagPreview").textContent = builtFlag() || "FLAG{…}"; };
+$("fbTime").onblur = () => renderBuilder();
+$("fbCount").oninput = (e) => { S.count = e.target.value; save(); $("flagPreview").textContent = builtFlag() || "FLAG{…}"; };
+$("notes").value = S.notes; $("notes").oninput = (e) => { S.notes = e.target.value; save(); };
+document.querySelectorAll(".boardbtn").forEach((b) => b.onclick = () => showEv(b.dataset.ev));
+
+if (S.started) $("intro").classList.add("hidden"); else $("teamName").value = S.team;
+renderRoles(); renderRecon(); renderBuilder(); renderPins(); renderBay(); drawMap(); showEv("A", false); updateStats();
+setInterval(updateStats, 1000);
+if (S.solvedAt && S.solution) $("feedback").textContent = "✅ Solved – click Submit Flag to view the debrief again.";
+</script>
+</body>
+</html>
